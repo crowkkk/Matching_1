@@ -1,0 +1,115 @@
+import numpy as np
+import xlrd
+import math
+
+data_set_3 = xlrd.open_workbook(r'D:\PycharmProjects\python practice\S\training_set_3.xlsx')
+#  通过索引获取工作表
+table = data_set_3.sheets()[0]
+
+# todo 获取每一整列的内容(索引从0开始)
+X = np.array(table.col_values(0))
+Y = np.array(table.col_values(1))
+Z = np.array(table.col_values(2))
+B = np.array(table.col_values(3))
+C = np.array(table.col_values(4))
+F = np.array(table.col_values(5))
+# 位置信息
+PA = np.zeros((len(X), 4))
+# 刀轴矢量
+TA = np.zeros((len(X), 4))
+
+theta_b = 1
+theta_c = 1
+sx = 1
+sy = 1
+sz = 1
+# todo（！！！） 未知量，需要求解！
+dtx = 2
+dty = 3
+dtz = 4
+dwx = 5
+dwy = 6
+dwz = 7
+# todo(!!!) 位置信息，待确认
+pos = np.array([0, 0, 0, 1])
+pos = pos.reshape(pos.shape[0], 1)
+# 刀轴矢量
+inf = np.array([0, 0, 1, 0])
+inf = inf.reshape(inf.shape[0], 1)
+
+# todo 循环嵌套处理
+for i in range(0, len(X), 1):
+    theta_b = B[i]
+    theta_c = C[i]
+    sx = X[i]
+    sy = Y[i]
+    sz = Z[i]
+    tRb = np.array([[np.cos(theta_b * np.pi / 180), 0, -np.sin(theta_b * np.pi / 180), 0], [0, 1, 0, 0],
+                    [np.sin(theta_b * np.pi / 180), 0, np.cos(theta_b * np.pi / 180), 0], [0, 0, 0, 1]])
+    bTr = np.array([[1, 0, 0, -sx - dtx], [0, 1, 0, -sy - dty], [0, 0, 1, -sz - dtz], [0, 0, 0, 1]])
+    rTw = np.array([[1, 0, 0, dwx], [0, 1, 0, -sy - dwy], [0, 0, 1, -sz - dwz], [0, 0, 0, 1]])
+    wRc = np.array([[np.cos(theta_c * np.pi / 180), np.sin(theta_c * np.pi / 180), 0, 0],
+                    [-np.sin(theta_c * np.pi / 180), np.cos(theta_c * np.pi / 180), 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
+    tTw = np.dot(np.dot(np.dot(wRc, rTw), bTr), tRb)
+    pos_new = np.dot(tTw, pos)
+    inf_new = np.dot(tTw, inf)
+    PA[i] = pos_new.T
+    TA[i] = inf_new.T
+
+# 沿刀轴矢量方向偏移
+length = 40
+# 偏移矢量(offset axis)
+OA = np.zeros((len(X), 3))
+for i in range(0, 3, 1):
+    OA[:, i] = (length*TA[:, i])
+for i in range(0, len(X), 1):
+    OA[i] = OA[i]/(math.sqrt((TA[i, 0]**2+TA[i, 1]**2+TA[i, 2]**2)))
+# 偏移点位置信息(position information)
+PI = np.zeros((len(X), 3))
+for i in range(0, len(X), 1):
+    PI[i] = PA[i, 0:3]+OA[i]
+# 加工端点集合（Set of machining endpoints）
+SMP = np.array([PA[:, 0:3], PI])
+# 理论点集合
+Mathematical_Points = xlrd.open_workbook(r'D:\PycharmProjects\python practice\S\Mathematical_Points.xls')
+table2 = Mathematical_Points.sheets()[0]
+MP = np.zeros((3, len(table2.col_values(0))))
+for i in range(0, 3, 1):
+    MP[i] = np.array(table2.col_values(i))
+MP = MP.T
+# 对应点集（corresponding points）
+CP = np.zeros((2, len(table.col_values(0)), 9))
+# 点与点的距离（distance）
+dis = np.full(len(table2.col_values(0)), 1000)
+# 加工点与理论点匹配
+for i in range(0, len(table.col_values(0)), 1):
+    for j in range(0, len(table2.col_values(0)), 1):
+        if abs(SMP[1, i, 2]-MP[j, 2]) > 0.6:
+            continue
+        dis[j] = sum((SMP[1, i, 0:2]-MP[j, 0:2])**2)
+    min_position = np.argmin(dis)  # 返回第一个最小值的位置
+    CP[1, i, 0:3] = MP[min_position]
+    dis = np.full(len(table2.col_values(0)), 10000000)
+    CP[1, i, 3:6] = SMP[1, i, 0:3]
+
+for i in range(0, len(table.col_values(0)), 1):
+    for j in range(0, len(table2.col_values(0)), 1):
+        if abs(SMP[0, i, 2]-MP[j, 2]) > 0.6:
+            continue
+        dis[j] = sum((SMP[0, i, 0:2]-MP[j, 0:2])**2)
+    min_position = np.argmin(dis)  # 返回第一个最小值的位置
+    CP[0, i, 0:3] = MP[min_position]
+    dis = np.full(len(table2.col_values(0)), 10000000)
+    CP[0, i, 3:6] = SMP[0, i, 0:3]
+# CP中导入加工数据（B、C、F）
+for i in range(0, 2, 1):
+    for j in range(0,len(table.col_values(0)), 1):
+        CP[i, j, 6] = B[j]
+        CP[i, j, 7] = C[j]
+        CP[i, j, 8] = F[j]
+
+# 剔除偏差过大的点——dis为阈值
+# 理论点数据增广——两对应点间沿矢量方向均布
+
+
+
