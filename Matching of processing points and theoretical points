@@ -1,6 +1,10 @@
 import numpy as np
 import xlrd
 import math
+import time
+
+# 计时器
+start = time.clock()
 
 data_set_3 = xlrd.open_workbook(r'D:\PycharmProjects\python practice\S\training_set_3.xlsx')
 #  通过索引获取工作表
@@ -65,11 +69,11 @@ for i in range(0, 3, 1):
 for i in range(0, len(X), 1):
     OA[i] = OA[i]/(math.sqrt((TA[i, 0]**2+TA[i, 1]**2+TA[i, 2]**2)))
 # 偏移点位置信息(position information)
-PI = np.zeros((len(X), 3))
-for i in range(0, len(X), 1):
-    PI[i] = PA[i, 0:3]+OA[i]
+# PI = np.zeros((len(X), 3))
+# for i in range(0, len(X), 1):
+#     PI[i] = PA[i, 0:3]+OA[i]
 # 加工端点集合（Set of machining endpoints）
-SMP = np.array([PA[:, 0:3], PI])
+# SMP = np.array([PA[:, 0:3], PI])
 # 理论点集合
 Mathematical_Points = xlrd.open_workbook(r'D:\PycharmProjects\python practice\S\Mathematical_Points.xls')
 table2 = Mathematical_Points.sheets()[0]
@@ -78,38 +82,55 @@ for i in range(0, 3, 1):
     MP[i] = np.array(table2.col_values(i))
 MP = MP.T
 # 对应点集（corresponding points）
-CP = np.zeros((2, len(table.col_values(0)), 9))
+CP = np.zeros((len(table.col_values(0)), 9))
 # 点与点的距离（distance）
-dis = np.full(len(table2.col_values(0)), 1000)
+dis = np.full(len(table2.col_values(0)), 1000000)
 # 加工点与理论点匹配
 for i in range(0, len(table.col_values(0)), 1):
     for j in range(0, len(table2.col_values(0)), 1):
-        if abs(SMP[1, i, 2]-MP[j, 2]) > 0.6:
+        if abs(PA[i, 2]-MP[j, 2]) > 0.6:
             continue
-        dis[j] = sum((SMP[1, i, 0:2]-MP[j, 0:2])**2)
+        dis[j] = sum((PA[i, 0:2]-MP[j, 0:2])**2)
     min_position = np.argmin(dis)  # 返回第一个最小值的位置
-    CP[1, i, 0:3] = MP[min_position]
+# 创建一个索引，减少循环时间
+    index_for_mp = min_position
+    CP[i, 0:3] = MP[index_for_mp]
     dis = np.full(len(table2.col_values(0)), 10000000)
-    CP[1, i, 3:6] = SMP[1, i, 0:3]
-
-for i in range(0, len(table.col_values(0)), 1):
-    for j in range(0, len(table2.col_values(0)), 1):
-        if abs(SMP[0, i, 2]-MP[j, 2]) > 0.6:
-            continue
-        dis[j] = sum((SMP[0, i, 0:2]-MP[j, 0:2])**2)
-    min_position = np.argmin(dis)  # 返回第一个最小值的位置
-    CP[0, i, 0:3] = MP[min_position]
-    dis = np.full(len(table2.col_values(0)), 10000000)
-    CP[0, i, 3:6] = SMP[0, i, 0:3]
+# 观察匹配结果质量
+    CP[i, 3:6] = PA[i, 0:3]
+# todo 最终匹配结果
+#     CP[i, 3] = X[i]
+#     CP[i, 4] = Y[i]
+#     CP[i, 5] = Z[i]
 # CP中导入加工数据（B、C、F）
-for i in range(0, 2, 1):
-    for j in range(0,len(table.col_values(0)), 1):
-        CP[i, j, 6] = B[j]
-        CP[i, j, 7] = C[j]
-        CP[i, j, 8] = F[j]
+    CP[i, 6] = B[i]
+    CP[i, 7] = C[i]
+    CP[i, 8] = F[i]
 
-# 剔除偏差过大的点——dis为阈值
+# 剔除偏差过大的点——R为阈值
+# 刀具半径
+R = 10
+s = np.zeros(len(table.col_values(0)))
+for i in range(0, len(table.col_values(0)),1):
+    if sum((CP[i, 0:2]-CP[i, 3:5])**2) < (1.5*R)**2:
+        continue
+    s[i] = i
+CP = np.delete(CP, s, axis=0)
+OA = np.delete(OA, s, axis=0)
 # 理论点数据增广——两对应点间沿矢量方向均布
+# 增广数n
+n = 5
+# 最终点集（final points）
+# CP的行数
+ln = CP.shape[0]
+FP = np.zeros(((n+1)*ln, 9))
+for i in range(0, ln):
+    for j in range(0, n+1):
+        FP[6*i+j, 0:3] = CP[i, 0:3]+(j/n)*OA[i]
+        FP[6*i+j, 3:9] = CP[i, 3:9]
+
+end = time.clock()
+print('The final time is', (end-start)/60)
 
 
 
